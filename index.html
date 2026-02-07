@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit Billiards Defense</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <canvas id="gameCanvas"></canvas>
+
+  <div class="hud">
+    <div class="hud-row">
+      <span>HP <b id="hpValue">20</b></span>
+      <span>Score <b id="scoreValue">0</b></span>
+      <span>Level <b id="levelValue">1</b></span>
+      <span>Time <b id="timeValue">0</b>s</span>
+    </div>
+    <div class="hud-row">
+      <span>GRAVITY CHARGE</span>
+      <div class="bar-wrap"><div class="bar" id="cueBar"></div></div>
+    </div>
+    <div class="hint" id="hintText">手玉をドラッグして発射: 最初の衝突でブラックホール起動</div>
+  </div>
+
+  <div class="debug-panel">
+    <div class="debug-title">DEBUG GRAVITY</div>
+    <label class="debug-row">
+      <span>Strength</span>
+      <input id="dbgGravityStrength" type="range" min="1" max="200" step="1" value="11">
+      <b id="dbgGravityStrengthValue">11000000</b>
+    </label>
+    <label class="debug-row">
+      <span>Falloff</span>
+      <input id="dbgGravityFalloff" type="range" min="0.35" max="1.2" step="0.01" value="0.89">
+      <b id="dbgGravityFalloffValue">0.89</b>
+    </label>
+    <label class="debug-row debug-toggle">
+      <span>Sat Collide</span>
+      <input id="dbgSatCollision" type="checkbox" checked>
+      <b id="dbgSatCollisionValue">ON</b>
+    </label>
+  </div>
+
+  <div class="overlay hidden" id="upgradeOverlay">
+    <div class="panel">
+      <h2>UPGRADE PICK</h2>
+      <p id="upgradeSub">衛星を選んでアップグレードを適用</p>
+      <div id="upgradeList" class="upgrade-list"></div>
+      <div id="satelliteList" class="satellite-list"></div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="gameOverOverlay">
+    <div class="panel">
+      <h2>BLACK HOLE BREACHED</h2>
+      <p id="finalScore">Score: 0</p>
+      <button id="restartBtn">RESTART</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
