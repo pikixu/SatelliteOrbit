@@ -186,6 +186,9 @@ const game = {
   selectingRelic: false,
   selectingFusion: false,
   pendingFusionAfterFx: false,
+  fusionResultActive: false,
+  fusionResultTimer: 0,
+  fusionResultDuration: 1.35,
   bonusUfo: null,
   cueBall: {
     x: 640,
@@ -567,7 +570,6 @@ function createSatellite(id, x, y) {
     secondaryAttackType: null,
     secondaryAttackLevel: 1,
     fusionColors: null,
-    fusionAssistCooldown: 0,
     nearHoleTime: 0,
     gravityDamp: 1,
     auraLevel: 0,
@@ -1192,6 +1194,14 @@ function triggerFusionSecondaryAssist(sat, targetMeteor, x, y) {
   const level = Math.max(1, sat.secondaryAttackLevel || 1);
   const weak = 0.42;
   const accent = sat.fusionColors ? sat.fusionColors[1] : sat.color;
+  game.effects.push({
+    type: "spark",
+    x,
+    y,
+    ttl: 0.12,
+    life: 0.12,
+    color: accent,
+  });
   if (type === "bulletBurst") {
     const count = 4 + Math.floor(level / 2);
     const speed = (180 + level * 18) * game.scale;
@@ -1266,13 +1276,13 @@ function triggerFusionSecondaryAssist(sat, targetMeteor, x, y) {
       if (dx * dx + dy * dy <= range * range) dealDamage(m, dmg, accent);
     }
   } else if (type === "crossLaser") {
-    const range = (70 + level * 8) * game.scale;
-    const dmg = (1.2 + level * 0.3) * weak;
-    for (const m of game.meteors) {
-      if (Math.abs(m.y - y) <= 7 * game.scale + m.radius && Math.abs(m.x - x) <= range) dealDamage(m, dmg, accent);
-      if (Math.abs(m.x - x) <= 7 * game.scale + m.radius && Math.abs(m.y - y) <= range) dealDamage(m, dmg, accent);
-    }
-    game.effects.push({ type: "spark", x, y, ttl: 0.12, life: 0.12, color: accent });
+    const tmpSat = {
+      id: sat.id,
+      x,
+      y,
+      color: accent,
+    };
+    triggerCrossLaser(tmpSat, level, weak, true);
   } else if (type === "arcLightning") {
     const target = targetMeteor || game.meteors[0];
     if (!target) return;
@@ -1292,8 +1302,6 @@ function triggerFusionSecondaryAssist(sat, targetMeteor, x, y) {
 
 function tryFusionAssistFromPrimaryHit(sat, targetMeteor, x, y) {
   if (!sat || !sat.secondaryAttackType) return;
-  if (sat.fusionAssistCooldown > 0) return;
-  sat.fusionAssistCooldown = 0.08;
   triggerFusionSecondaryAssist(sat, targetMeteor, x, y);
 }
 
@@ -1486,7 +1494,6 @@ function updateSatellites(dt) {
     sat.x += sat.vx * dt;
     sat.y += sat.vy * dt;
     sat.miniSatCooldown = Math.max(0, sat.miniSatCooldown - dt);
-    sat.fusionAssistCooldown = Math.max(0, sat.fusionAssistCooldown - dt);
 
     const drag = game.battleStarted ? 1.0 : 0.97;
     sat.vx *= drag;
@@ -1829,23 +1836,71 @@ function randomUpgradeChoices(isInitialPick = false) {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
-    return arr.slice(0, 3);
+    return arr.slice(0, 3).map((u) => ({
+      key: u.id,
+      kind: "attack",
+      id: u.id,
+      name: u.name,
+      desc: u.desc,
+      category: u.category,
+      primaryId: u.id,
+      secondaryId: null,
+    }));
   }
-  const ownedTypeSet = new Set(
+  const fusedMap = new Map();
+  for (const s of game.satellites) {
+    if (s.attackType && s.secondaryAttackType) {
+      const key = `${s.attackType}x${s.secondaryAttackType}`;
+      if (!fusedMap.has(key)) {
+        const a = UPGRADE_LIBRARY.find((u) => u.id === s.attackType);
+        const b = UPGRADE_LIBRARY.find((u) => u.id === s.secondaryAttackType);
+        if (a && b) {
+          fusedMap.set(key, {
+            key,
+            kind: "fusion",
+            id: key,
+            name: `${a.name} x ${b.name}`,
+            desc: `${a.desc}\n${b.desc}`,
+            category: "attack",
+            primaryId: a.id,
+            secondaryId: b.id,
+          });
+        }
+      }
+    }
+  }
+  const normalChoices = attackPool.map((u) => ({
+    key: u.id,
+    kind: "attack",
+    id: u.id,
+    name: u.name,
+    desc: u.desc,
+    category: u.category,
+    primaryId: u.id,
+    secondaryId: null,
+  }));
+  const fusedChoices = [...fusedMap.values()];
+  const ownedKeySet = new Set(
     game.satellites
-      .map((s) => s.attackType)
-      .filter((t) => !!t)
+      .map((s) => satelliteUpgradeKey(s))
+      .filter((k) => !!k)
   );
-  const capped = ownedTypeSet.size >= 4;
+  const capped = ownedKeySet.size >= 4;
   const pool = capped
-    ? attackPool.filter((u) => ownedTypeSet.has(u.id))
-    : attackPool;
+    ? [...normalChoices, ...fusedChoices].filter((u) => ownedKeySet.has(u.key))
+    : [...normalChoices, ...fusedChoices];
   const arr = [...pool];
   for (let i = arr.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr.slice(0, 3);
+}
+
+function satelliteUpgradeKey(sat) {
+  if (!sat || !sat.attackType) return null;
+  if (sat.secondaryAttackType) return `${sat.attackType}x${sat.secondaryAttackType}`;
+  return sat.attackType;
 }
 
 function randomRelicChoices() {
@@ -1904,33 +1959,40 @@ function fuseSatellites(firstId, secondId) {
   return true;
 }
 
-function applyAttackChoice(attackId, isInitialPick) {
+function applyAttackChoice(choice, isInitialPick) {
+  const attackKey = typeof choice === "string" ? choice : choice.key;
+  const isFusionChoice = typeof choice === "object" && choice.kind === "fusion";
   if (isInitialPick) {
     if (game.satellites.length === 0) return;
-    setSatelliteAttackType(game.satellites[0], attackId, 1);
+    setSatelliteAttackType(game.satellites[0], attackKey, 1);
     closeUpgradeSelection();
     startBattle();
     return;
   }
 
   const sameType = game.satellites
-    .filter((s) => s.attackType === attackId)
+    .filter((s) => satelliteUpgradeKey(s) === attackKey)
     .sort((a, b) => a.attackLevel - b.attackLevel);
   if (sameType.length > 0) {
-    sameType[0].attackLevel += 1;
-    setSatelliteAttackType(sameType[0], sameType[0].attackType, sameType[0].attackLevel);
+    if (isFusionChoice) {
+      sameType[0].attackLevel += 1;
+      sameType[0].secondaryAttackLevel = Math.max(sameType[0].secondaryAttackLevel || 1, sameType[0].attackLevel);
+    } else {
+      sameType[0].attackLevel += 1;
+      setSatelliteAttackType(sameType[0], sameType[0].attackType, sameType[0].attackLevel);
+    }
   } else {
     const ownedTypeSet = new Set(
       game.satellites
-        .map((s) => s.attackType)
-        .filter((t) => !!t)
+        .map((s) => satelliteUpgradeKey(s))
+        .filter((k) => !!k)
     );
     if (ownedTypeSet.size >= 4) {
       closeUpgradeSelection();
       return;
     }
     const sat = spawnExtraSatellite();
-    setSatelliteAttackType(sat, attackId, 1);
+    setSatelliteAttackType(sat, attackKey, 1);
     setOrbitalVelocity(sat, 1.0);
   }
   closeUpgradeSelection();
@@ -1968,6 +2030,8 @@ function openUpgradeSelection(isInitialPick = false) {
   game.selectingFusion = false;
   game.awaitingInitialSatellitePick = isInitialPick;
   upgradeOverlay.classList.remove("hidden");
+  upgradeOverlay.classList.remove("fusion-mode");
+  upgradeOverlay.classList.remove("fusion-result-mode");
   upgradeList.innerHTML = "";
   satelliteList.style.display = "none";
   upgradeTitle.textContent = "UPGRADE PICK";
@@ -1977,21 +2041,30 @@ function openUpgradeSelection(isInitialPick = false) {
     btn.className = "upgrade-btn";
     const top = document.createElement("div");
     top.className = "upgrade-top";
-    const icon = createUpgradeIconNode(up.id, up.category);
+    const icon = createUpgradeIconNode(up.primaryId, up.category);
     const textWrap = document.createElement("div");
     const category = categoryLabel(up.category);
     textWrap.innerHTML = `<div class="upgrade-title">${up.name}</div><div class="upgrade-meta cat-text-${up.category}">${category}</div>`;
     top.appendChild(icon);
+    if (up.kind === "fusion") {
+      const iconB = createUpgradeIconNode(up.secondaryId, up.category);
+      top.appendChild(iconB);
+    }
     top.appendChild(textWrap);
     const desc = document.createElement("div");
-    desc.textContent = up.desc;
+    if (up.kind === "fusion") {
+      const lines = up.desc.split("\n");
+      desc.innerHTML = `${lines[0]}<br>${lines[1] || ""}`;
+    } else {
+      desc.textContent = up.desc;
+    }
     const foot = document.createElement("div");
     foot.className = "upgrade-meta";
     if (isInitialPick) {
       foot.textContent = "START!!";
     } else {
       const sameType = game.satellites
-        .filter((s) => s.attackType === up.id)
+        .filter((s) => satelliteUpgradeKey(s) === up.key)
         .sort((a, b) => b.attackLevel - a.attackLevel);
       if (sameType.length === 0) {
         foot.textContent = "NEW!!";
@@ -2003,7 +2076,7 @@ function openUpgradeSelection(isInitialPick = false) {
     btn.appendChild(desc);
     btn.appendChild(foot);
     btn.addEventListener("click", () => {
-      applyAttackChoice(up.id, isInitialPick);
+      applyAttackChoice(up, isInitialPick);
     });
     upgradeList.appendChild(btn);
   }
@@ -2017,6 +2090,8 @@ function openRelicSelection() {
   game.selectingRelic = true;
   game.awaitingInitialSatellitePick = false;
   upgradeOverlay.classList.remove("hidden");
+  upgradeOverlay.classList.remove("fusion-mode");
+  upgradeOverlay.classList.remove("fusion-result-mode");
   upgradeList.innerHTML = "";
   satelliteList.style.display = "none";
   upgradeTitle.textContent = "BOSS RELIC";
@@ -2049,13 +2124,17 @@ function openRelicSelection() {
 }
 
 function openFusionSelection() {
-  const eligible = game.satellites.filter((s) => !!s.attackType);
+  const eligible = game.satellites.filter((s) => !!s.attackType && !s.secondaryAttackType);
   if (eligible.length < 2) return;
   game.pausedForUpgrade = true;
   game.selectingFusion = true;
+  game.fusionResultActive = false;
+  game.fusionResultTimer = 0;
   game.selectingRelic = false;
   game.awaitingInitialSatellitePick = false;
   upgradeOverlay.classList.remove("hidden");
+  upgradeOverlay.classList.add("fusion-mode");
+  upgradeOverlay.classList.remove("fusion-result-mode");
   upgradeList.innerHTML = "";
   satelliteList.style.display = "none";
   upgradeTitle.textContent = "SAT FUSION";
@@ -2091,8 +2170,16 @@ function openFusionSelection() {
           return;
         }
         if (first === sat.id) return;
-        fuseSatellites(first, sat.id);
-        closeUpgradeSelection();
+        const matA = getSatelliteById(first);
+        const matB = getSatelliteById(sat.id);
+        const ok = fuseSatellites(first, sat.id);
+        if (!ok) return;
+        const result = getSatelliteById(first);
+        if (result && matA && matB) {
+          showFusionResultPresentation(result, matA, matB);
+        } else {
+          closeUpgradeSelection();
+        }
       });
       upgradeList.appendChild(btn);
     }
@@ -2105,13 +2192,78 @@ function openFusionSelection() {
 function closeUpgradeSelection() {
   game.pausedForUpgrade = false;
   upgradeOverlay.classList.add("hidden");
+  upgradeOverlay.classList.remove("fusion-mode");
+  upgradeOverlay.classList.remove("fusion-result-mode");
   game.selectingRelic = false;
   game.selectingFusion = false;
+  game.fusionResultActive = false;
+  game.fusionResultTimer = 0;
   game.awaitingInitialSatellitePick = false;
   upgradeTitle.textContent = "UPGRADE PICK";
   upgradeSub.textContent = "攻撃タイプを選択";
   satelliteList.innerHTML = "";
   satelliteList.style.display = "";
+}
+
+function showFusionResultPresentation(resultSat, matA, matB) {
+  const aInfo = UPGRADE_LIBRARY.find((u) => u.id === matA.attackType);
+  const bInfo = UPGRADE_LIBRARY.find((u) => u.id === matB.attackType);
+  const aName = aInfo ? aInfo.name : matA.attackType;
+  const bName = bInfo ? bInfo.name : matB.attackType;
+  const resultName = `${aName} x ${bName}`;
+  game.fusionResultActive = true;
+  game.fusionResultTimer = game.fusionResultDuration;
+  game.pausedForUpgrade = true;
+  game.selectingFusion = true;
+  upgradeOverlay.classList.add("fusion-mode");
+  upgradeOverlay.classList.add("fusion-result-mode");
+  upgradeOverlay.classList.remove("hidden");
+  upgradeTitle.textContent = "FUSION RESULT";
+  upgradeSub.textContent = "融合結果";
+  upgradeList.innerHTML = "";
+  satelliteList.style.display = "none";
+
+  const left = document.createElement("div");
+  left.className = "upgrade-btn fusion-mat";
+  left.innerHTML = `<div class="upgrade-top"></div><div class="upgrade-title">${aName}</div>`;
+  left.querySelector(".upgrade-top").appendChild(createUpgradeIconNode(matA.attackType, "attack"));
+
+  const right = document.createElement("div");
+  right.className = "upgrade-btn fusion-mat";
+  right.innerHTML = `<div class="upgrade-top"></div><div class="upgrade-title">${bName}</div>`;
+  right.querySelector(".upgrade-top").appendChild(createUpgradeIconNode(matB.attackType, "attack"));
+
+  const result = document.createElement("div");
+  result.className = "upgrade-btn fusion-result";
+  const top = document.createElement("div");
+  top.className = "upgrade-top";
+  top.appendChild(createUpgradeIconNode(matA.attackType, "attack"));
+  top.appendChild(createUpgradeIconNode(matB.attackType, "attack"));
+  result.appendChild(top);
+  const title = document.createElement("div");
+  title.className = "upgrade-title";
+  title.textContent = resultName;
+  const desc = document.createElement("div");
+  desc.innerHTML = `${aInfo ? aInfo.desc : ""}<br>${bInfo ? bInfo.desc : ""}`;
+  const foot = document.createElement("div");
+  foot.className = "upgrade-meta";
+  foot.textContent = `Lv.${resultSat.attackLevel}`;
+  result.appendChild(title);
+  result.appendChild(desc);
+  result.appendChild(foot);
+
+  const plus = document.createElement("div");
+  plus.className = "fusion-symbol";
+  plus.textContent = "+";
+  const arrow = document.createElement("div");
+  arrow.className = "fusion-symbol";
+  arrow.textContent = "=>";
+
+  upgradeList.appendChild(left);
+  upgradeList.appendChild(plus);
+  upgradeList.appendChild(right);
+  upgradeList.appendChild(arrow);
+  upgradeList.appendChild(result);
 }
 
 function updateSpawns(dt) {
@@ -2258,6 +2410,15 @@ function nextLevelIncrement(level) {
 }
 
 function updateLevel() {
+  const bossSequenceActive =
+    game.bossBreakFxActive ||
+    game.pendingRelicAfterBoss ||
+    game.selectingRelic ||
+    game.fusionFxActive ||
+    game.pendingFusionAfterFx ||
+    game.selectingFusion ||
+    game.fusionResultActive;
+  if (bossSequenceActive) return;
   if (game.score >= game.nextLevelScore) {
     game.level += 1;
     game.nextLevelScore += nextLevelIncrement(game.level);
@@ -3063,6 +3224,8 @@ function resetGame() {
   game.selectingRelic = false;
   game.selectingFusion = false;
   game.pendingFusionAfterFx = false;
+  game.fusionResultActive = false;
+  game.fusionResultTimer = 0;
   game.bonusUfo = null;
   game.maxHp = 20;
   game.hp = game.maxHp;
@@ -3100,6 +3263,12 @@ function tick(dt) {
   if (game.pendingFusionAfterFx && !game.pausedForUpgrade && !game.levelUpFxActive && !game.bossBreakFxActive && !game.fusionFxActive) {
     game.pendingFusionAfterFx = false;
     openFusionSelection();
+  }
+  if (game.fusionResultActive) {
+    game.fusionResultTimer -= dt;
+    if (game.fusionResultTimer <= 0) {
+      closeUpgradeSelection();
+    }
   }
   if (!game.pausedForUpgrade && game.splitBossAlive) {
     game.bossThumpTimer -= dt;
