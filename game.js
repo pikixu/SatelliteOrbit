@@ -21,6 +21,13 @@ const dbgGravityFalloff = document.getElementById("dbgGravityFalloff");
 const dbgGravityFalloffValue = document.getElementById("dbgGravityFalloffValue");
 const dbgSatCollision = document.getElementById("dbgSatCollision");
 const dbgSatCollisionValue = document.getElementById("dbgSatCollisionValue");
+const versionBadge = document.getElementById("versionBadge");
+
+const APP_VERSION = "0.1.0";
+
+if (versionBadge) {
+  versionBadge.textContent = `v${APP_VERSION}`;
+}
 
 const COLORS = {
   cyan: "#28f4ff",

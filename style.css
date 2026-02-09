@@ -409,3 +409,18 @@ button {
   padding: 12px 18px;
   color: #dff9ff;
 }
+
+.version-badge {
+  position: fixed;
+  right: 12px;
+  bottom: 10px;
+  z-index: 30;
+  padding: 6px 10px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 10px;
+  color: #9df6ff;
+  border: 1px solid rgba(130, 235, 255, 0.5);
+  background: linear-gradient(160deg, rgba(8, 16, 35, 0.86), rgba(8, 16, 35, 0.62));
+  box-shadow: 0 0 10px rgba(40, 230, 255, 0.2), inset 0 0 8px rgba(40, 230, 255, 0.12);
+  pointer-events: none;
+}
