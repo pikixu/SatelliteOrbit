@@ -160,6 +160,7 @@ const game = {
   globalBulletRicochet: 0,
   nextLevelScore: 12,
   nextMeteorId: 1,
+  nextSatelliteId: 1,
   meteorSpawnTimer: 1.5,
   meteorSpawnInterval: 1.5,
   bossSpawnEvery: 45,
@@ -554,7 +555,7 @@ function spawnInitialSatellites() {
   game.satellites.length = 0;
   const x = game.centerX + 180 * game.scale;
   const y = game.centerY;
-  const sat = createSatellite(1, x, y);
+  const sat = createSatellite(game.nextSatelliteId++, x, y);
   game.satellites.push(sat);
   setOrbitalVelocity(sat, 1.2);
   playSatelliteSpawnFx(sat);
@@ -589,7 +590,7 @@ function createSatellite(id, x, y) {
 }
 
 function spawnExtraSatellite() {
-  const id = game.satellites.length + 1;
+  const id = game.nextSatelliteId++;
   const sat = createSatellite(
     id,
     rand(game.width * 0.2, game.width * 0.8),
@@ -1959,11 +1960,11 @@ function fuseSatellites(firstId, secondId) {
   const bLevel = b.auraLevel || 0;
   a.auraLevel = Math.min(4, Math.max(aLevel, bLevel));
   a.auraTimer = 0;
-  game.satellites = game.satellites.filter((s) => s.id !== b.id);
+  game.satellites = game.satellites.filter((s) => s !== b);
   game.satTouchPairs.clear();
   playSatelliteSpawnFx(a);
   hintText.textContent = `${a.attackType.toUpperCase()} + ${b.attackType.toUpperCase()} FUSION`;
-  return true;
+  return a;
 }
 
 function applyAttackChoice(choice, isInitialPick) {
@@ -2179,9 +2180,8 @@ function openFusionSelection() {
         if (first === sat.id) return;
         const matA = getSatelliteById(first);
         const matB = getSatelliteById(sat.id);
-        const ok = fuseSatellites(first, sat.id);
-        if (!ok) return;
-        const result = getSatelliteById(first);
+        const result = fuseSatellites(first, sat.id);
+        if (!result) return;
         if (result && matA && matB) {
           showFusionResultPresentation(result, matA, matB);
         } else {
@@ -3190,6 +3190,7 @@ function resetGame() {
   game.cuePowerMultiplier = 1;
   game.globalBulletRicochet = 0;
   game.nextLevelScore = 12;
+  game.nextSatelliteId = 1;
   game.meteorSpawnInterval = 1.5;
   game.meteorSpawnTimer = 1.5;
   game.nextBossAt = game.bossSpawnEvery;
